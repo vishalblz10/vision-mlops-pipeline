@@ -19,6 +19,7 @@ env/
 # Trained models and exports
 models/*.pt
 models/*.onnx
+models/*.onnx.data
 models/*.json
 
 # MLflow local stores
