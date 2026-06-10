@@ -1,0 +1,60 @@
+# Model promotion pipeline: train a candidate, evaluate it on a fresh holdout,
+# and let `vmops gate` decide. A non-zero gate exit fails the job, which blocks
+# the promotion — the same pattern a production pipeline would use before
+# pointing the MLflow `production` alias (and the KServe canary) at a new
+# version.
+name: model-promotion
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: "Training epochs for the candidate"
+        default: "5"
+        required: false
+
+jobs:
+  train-evaluate-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e .
+
+      - name: Train candidate
+        run: |
+          vmops train \
+            --epochs "${{ github.event.inputs.epochs || '5' }}" \
+            --out models/candidate.pt \
+            --metrics-out models/candidate-metrics.json
+
+      - name: Evaluation gate (blocks promotion on failure)
+        run: |
+          vmops gate \
+            --candidate models/candidate-metrics.json \
+            --config config/gates.yaml \
+            --out models/gate-decision.json
+
+      - name: Export ONNX artifact for serving
+        run: vmops export-onnx --model models/candidate.pt --out models/model.onnx
+
+      - name: Upload promoted artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: promoted-model
+          path: |
+            models/candidate.pt
+            models/candidate-metrics.json
+            models/gate-decision.json
+            models/model.onnx
