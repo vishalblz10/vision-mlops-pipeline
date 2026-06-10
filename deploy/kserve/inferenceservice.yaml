@@ -1,0 +1,29 @@
+# KServe InferenceService serving the ONNX export (`vmops export-onnx` artifact).
+#
+# canaryTrafficPercent implements the staged rollout: KServe keeps the previous
+# revision serving 90% of traffic while the new model takes 10%. Watch the
+# vmops_* Prometheus metrics (confidence histogram, latency) on the canary;
+# promote by removing the field, roll back by setting it to 0.
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: shapes-classifier
+  annotations:
+    serving.kserve.io/enable-prometheus-scraping: "true"
+spec:
+  predictor:
+    canaryTrafficPercent: 10
+    minReplicas: 1
+    maxReplicas: 4
+    model:
+      modelFormat:
+        name: onnx
+      protocolVersion: v2
+      storageUri: s3://vision-mlops-artifacts/shapes-classifier/model.onnx
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi

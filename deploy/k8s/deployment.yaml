@@ -1,0 +1,69 @@
+# Plain-Kubernetes deployment of the FastAPI model server.
+# The probes map onto the app endpoints: /healthz (liveness) answers as soon as
+# the process is up, /readyz (readiness) stays 503 until the model is loaded so
+# the Service never routes traffic to a replica that cannot predict yet.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vision-mlops-server
+  labels:
+    app: vision-mlops-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vision-mlops-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vision-mlops-server
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
+    spec:
+      containers:
+        - name: server
+          image: ghcr.io/vishalblz10/vision-mlops-server:0.1.0
+          ports:
+            - name: http
+              containerPort: 8000
+          env:
+            - name: MODEL_PATH
+              value: /models/model.pt
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: vision-mlops-models

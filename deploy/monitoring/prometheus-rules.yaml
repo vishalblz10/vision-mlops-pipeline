@@ -1,0 +1,60 @@
+# Alert rules over the metrics exported by vision_mlops.serving.api.
+# Each alert ties back to a concrete operational decision: page, roll back, or
+# retrain.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: vision-mlops-alerts
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: vision-mlops.serving
+      rules:
+        - alert: ModelNotReady
+          expr: vmops_model_ready == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Model server has no model loaded"
+            description: "A replica has been answering /readyz with 503 for 5 minutes."
+
+        - alert: PredictLatencyP99High
+          expr: |
+            histogram_quantile(0.99, sum(rate(vmops_request_latency_seconds_bucket[5m])) by (le)) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "p99 /predict latency above 500ms"
+            description: "Sustained slow predictions; check CPU throttling or batch size."
+
+        - alert: LowConfidencePredictions
+          expr: |
+            (
+              sum(rate(vmops_prediction_confidence_bucket{le="0.6"}[30m]))
+              /
+              sum(rate(vmops_prediction_confidence_count[30m]))
+            ) > 0.3
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "More than 30% of predictions under 0.6 confidence"
+            description: >-
+              The confidence distribution has shifted low — a common symptom of
+              input drift. Run the offline drift job (`vmops drift`) and compare
+              feature PSI against the training window.
+
+        - alert: PredictionClassSkew
+          expr: |
+            max(rate(vmops_predictions_total[1h]))
+            /
+            clamp_min(min(rate(vmops_predictions_total[1h])), 0.001) > 20
+          for: 1h
+          labels:
+            severity: info
+          annotations:
+            summary: "Predicted-class distribution is heavily skewed"
+            description: "One class dominates served predictions; check upstream data."
