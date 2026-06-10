@@ -1,0 +1,7 @@
+# Promotion gate thresholds. The `vmops gate` command (and the CI promotion
+# workflow) refuses to promote a candidate model that violates any of these.
+
+min_accuracy: 0.90          # absolute floor on holdout accuracy
+min_f1_macro: 0.90          # absolute floor on macro-averaged F1
+min_per_class_recall: 0.80  # every class must reach this recall
+max_accuracy_drop: 0.02     # tolerated regression vs the serving baseline
